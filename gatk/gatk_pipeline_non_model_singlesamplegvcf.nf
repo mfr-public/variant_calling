@@ -7,7 +7,7 @@ nextflow.enable.dsl = 2
 params.reads          = "/path/to/reads/*_{1,2}.fastq.gz" 
 params.ref            = "/path/to/reference.fasta"
 params.ref_index      = "/path/to/reference.fasta.*"       
-params.interval_lists = "/scratch/pawsey0149/mrichardson/genome/polished_*.list" 
+params.interval_lists = "/path/to/polished_*.list" 
 params.outdir         = "./results"
 // If you want to use your specific binary, pass this param. Otherwise leave 'fastp'
 params.fastp_bin      = "fastp" 
