@@ -1,0 +1,116 @@
+params {
+    outdir = "./results"
+    fastp_bin = "/home/mrichardson/bin/fastp" 
+}
+
+// ------------------------------------------------------------------
+// EXECUTOR SETTINGS (CRITICAL FOR YOUR HPC)
+// ------------------------------------------------------------------
+executor {
+    name = 'slurm'
+    // Prevents Nextflow from overwhelming the Slurm scheduler.
+    // Keeps us safely under the 256 concurrent job limit.
+    queueSize = 240
+    // Limits the rate of job submission so Slurm doesn't choke
+    submitRateLimit = '10 sec'
+}
+
+process {
+    executor = 'slurm'
+    clusterOptions = '--account=pawsey0149' 
+    queue    = 'work'                       
+
+    // CRITICAL FOR LUSTRE FILESYSTEMS: 
+    // Prevents false cache misses due to delayed metadata syncing across nodes.
+    cache = 'lenient'
+
+    // If a job fails due to memory (137/104/247) or timeout (140), retry it
+    errorStrategy = { task.exitStatus in [143,137,104,134,139,140,247] ? 'retry' : 'finish' }
+    maxRetries    = 2
+
+    // ------------------------------------------------------------------
+    // RESOURCE ALLOCATION (Optimized for 128-core / 230GB nodes)
+    // Target ratio: ~1.8 GB to 2.0 GB per CPU core
+    // ------------------------------------------------------------------
+    
+    withName: 'FASTP' {
+        cpus   = 4
+        memory = '8 GB'  // 2 GB/core
+        time   = '2h'
+    }
+    
+    withName: 'ALIGN_AND_PREPROCESS' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0:bwa-mem2/2.2.1--hd03093a_2:samtools/1.15--h3843a85_0'
+        // Packs exactly 7 jobs per node (112 cores / 224 GB RAM used)
+        cpus   = 16
+        // Dynamic memory: asks for 32GB first try, 64GB second try if OOM
+        memory = { 32.GB * task.attempt } 
+        time   = '16h'   // Cushioned up from 10h to be safe
+    }
+    
+    withName: 'HAPLOTYPE_CALLER' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0'
+        // Assuming you split into ~20 intervals!
+        // Packs exactly 28 jobs per node (112 cores / 224 GB RAM used)
+        cpus   = 4
+        memory = '8 GB'
+        // Dynamic time allocation: 6 hours first try. If it times out (error 140), 
+        // the retry will automatically ask for 12 hours, then 24 hours.
+        time   = { 6.h * task.attempt } 
+    }
+    
+    withName: 'MERGE_SINGLE_SAMPLE_GVCFS' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0'
+        cpus   = 2
+        memory = '8 GB'
+        time   = '3h'
+    }
+    
+    withName: 'GENOMICS_DB' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0'
+        // This process requires high memory to ingest 330 samples simultaneously
+        cpus   = 4 
+        memory = '48 GB' 
+        time   = { 8.h * task.attempt }
+    }
+    
+    withName: 'GENOTYPE_GVCFS' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0'
+        cpus   = 4
+        memory = '24 GB'
+        time   = '8h'
+    }
+    
+    withName: 'MERGE_COHORT_FINAL' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0'
+        cpus   = 2
+        memory = '16 GB'
+        time   = '4h'
+    }
+    
+    withName: 'FILTER_VARIANTS' {
+        module = 'gatk4/4.2.5.0--hdfd78af_0'
+        cpus   = 2
+        memory = '16 GB'
+        time   = '2h'
+    }
+}
+
+// ------------------------------------------------------------------
+// INTROSPECTION (Added overwrite = true to prevent aborts!)
+// ------------------------------------------------------------------
+timeline {
+  enabled = true
+  file = "${params.outdir}/pipeline_info/timeline.html"
+  overwrite = true
+}
+report {
+  enabled = true
+  file = "${params.outdir}/pipeline_info/report.html"
+  overwrite = true
+}
+trace {
+  enabled = true
+  file = "${params.outdir}/pipeline_info/trace.txt"
+  overwrite = true
+}
